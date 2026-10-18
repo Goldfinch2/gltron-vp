@@ -32,9 +32,17 @@ cabinet's (advmame.rc).
 One player: the camera follows your cycle. Two players: one view of the whole
 arena. Before a game, the computer plays a demo.
 
+`leds.cfg` gives cabinets with LED-lit controls the game's lamp colors and
+its control guide (hold the select button on the game in the menu): stick =
+STEER, button 1 = BOOSTER, button 2 = WALL BUSTER, both players. "booster"
+and "wall buster" are not among the cabinet's shared voice clips: add
+`guide/booster.wav` and `guide/wall_buster.wav` to have them spoken (the
+labels show either way).
+
 ## Building
 
-In WSL2 Debian, with the VectorPie SDK in `~/VectorPie/sdk` (its
+In WSL2 Debian, with the VectorPie SDK installed (in the SDK: `cmake --install build-pc` and
+`cmake --install build-pi`, to `~/VectorPie/dist/`; again after changing it) (its
 `tools/setup-wsl.sh` sets everything up):
 
 ```sh
