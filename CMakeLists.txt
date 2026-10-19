@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gltron_vp VERSION 1.0.0 LANGUAGES C CXX)
+project(gltron_vp VERSION 1.1.0 LANGUAGES C CXX)
 
 # GLtron on the VectorPie SDK. Builds, from WSL2 Debian (see README.md):
 #   cmake --preset pc && cmake --build --preset pc     # build-pc/gltron.exe

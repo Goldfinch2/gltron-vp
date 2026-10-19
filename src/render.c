@@ -13,6 +13,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #define ARENA       600.0f          /* levels/square.lua scale_factor */
 #define WALL_H      75.0f           /* square.lua: 0.125 x scale_factor */
@@ -108,7 +109,7 @@ static void placeCamera(void)
 	/* One human: GLtron's default follow camera ("Mike-cam"), alive or
 	 * still exploding (it stays on the crash, pulling back as the explosion
 	 * grows; then the whole-arena view below). */
-	if(P.humans == 1 && P.state != STATE_TITLE &&
+	if(P.humans == 1 && !attractDemo() &&
 	   (game->player[0].data.speed > 0 || game->player[0].data.exp_radius < EXP_RADIUS_MAX)) {
 		Data *data = &game->player[0].data;
 		float x, y, phi, chi = PI / 3, r = 18.0f + 1.5f * data->exp_radius;
@@ -131,7 +132,7 @@ static void placeCamera(void)
 	 * from above one side (circling slowly in the demo). */
 	v->fov_deg = 70.0f;
 	v->fog_floor = 0.06f;               /* near side of the arena full, far side 6 % */
-	if(P.state == STATE_TITLE) {
+	if(attractDemo()) {
 		v->fog_start = 450.0f;          /* the camera is about 775 from the center */
 		v->fog_end = 1000.0f;
 		float a = P.recAlpha * 0.15f;
@@ -376,7 +377,7 @@ static void drawHUD(vp_dvg *d)
 	drawMap(d);
 
 	/* the last console message, for two seconds */
-	if(P.messageTime < 2.0f && P.message[0] && P.state != STATE_TITLE) {
+	if(P.messageTime < 2.0f && P.message[0] && !attractDemo()) {
 		vp_color(d, 160, 160, 160);
 		vp_text(d, P.message, 2048, 950, 70, VP_TEXT_CENTER);
 	}
@@ -396,6 +397,59 @@ static void drawCoinPrompt(vp_dvg *d, float y, float height)
 	if(!P.credits.free_play) {
 		snprintf(text, sizeof text, "CREDITS %d", P.credits.credits);
 		vp_text(d, text, 2048, 130, 80, VP_TEXT_CENTER);
+	}
+}
+
+/* The CONTROLS page: a row per function, its controls beside it (gray while
+ * they are the standard), the row being laid out blinking; EXIT; the help. */
+static void drawControls(vp_dvg *d)
+{
+	char text[VP_CONTROLS_LENGTH * 2];
+	const char *one, *two;
+	vp_input *in = P.input;
+	int i;
+	float y;
+
+	vp_text_font(VP_FONT_ASTEROIDS);
+	vp_color(d, 0, 200, 255);
+	vp_text(d, "CONTROLS", 2048, 3550, 160, VP_TEXT_CENTER);
+	for(i = 0; i <= FUNCTIONS; i++) {
+		int sel = i == P.ctlRow;
+		y = 3200 - i * 230.0f - (i == FUNCTIONS ? 80.0f : 0.0f);
+		vp_text_font(VP_FONT_ASTEROIDS);
+		if(sel) vp_color(d, 255, 60, 60); else vp_color(d, 255, 255, 255);
+		if(i == FUNCTIONS) {
+			vp_text(d, "EXIT", 2048, y, 90, VP_TEXT_CENTER);
+			break;
+		}
+		vp_text(d, FUNCTION_LABEL[i], 350, y, 80, VP_TEXT_LEFT);
+		if(sel && P.capture.capturing) {
+			if((int)(P.stateTime * 3) % 2 == 0) {
+				vp_color(d, 255, 220, 60);
+				vp_text(d, "...", 1900, y, 80, VP_TEXT_LEFT);
+			}
+			continue;
+		}
+		const char *has = vp_input_controls(in, FUNCTION_NAME[i]);
+		vp_input_spelled(in, FUNCTION_NAME[i], has, text, sizeof text);
+		vp_text_font(VP_FONT_HERSHEY);
+		if(has && !strcmp(has, "standard")) vp_color(d, 150, 150, 150);
+		else if(!sel) vp_color(d, 120, 255, 120);
+		vp_text(d, text, 1900, y, 70, VP_TEXT_LEFT);
+	}
+	vp_text_font(VP_FONT_HERSHEY);
+	if(P.ctlSaid[0]) {
+		vp_color(d, 255, 220, 60);
+		vp_text(d, P.ctlSaid, 2048, 1050, 70, VP_TEXT_CENTER);
+	}
+	if(P.ctlRow < FUNCTIONS || P.capture.capturing) {
+		vp_capture_help(&P.capture, &one, &two);
+		vp_color(d, 160, 160, 160);
+		vp_text(d, one, 2048, 850, 70, VP_TEXT_CENTER);
+		vp_text(d, two, 2048, 730, 70, VP_TEXT_CENTER);
+	} else {
+		vp_color(d, 160, 160, 160);
+		vp_text(d, "START, ENTER OR TAB - BACK TO THE TITLE", 2048, 790, 70, VP_TEXT_CENTER);
 	}
 }
 
@@ -469,6 +523,9 @@ static void drawCenterText(vp_dvg *d)
 		vp_text_font(VP_FONT_HERSHEY);
 		vp_color(d, 160, 160, 160);
 		vp_text(d, "stick up/down: letter   button 1: next   button 2: back", 2048, 1550, 70, VP_TEXT_CENTER);
+		break;
+	case STATE_CONTROLS:
+		drawControls(d);
 		break;
 	default:
 		break;

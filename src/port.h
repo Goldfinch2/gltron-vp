@@ -16,8 +16,14 @@ enum {
 	STATE_PLAYING,
 	STATE_OVER,         /* a round is over: who won */
 	STATE_GAMEOVER,     /* every human is out of lives */
-	STATE_ENTRY         /* a human enters initials for the high scores */
+	STATE_ENTRY,        /* a human enters initials for the high scores */
+	STATE_CONTROLS      /* laying out the controls (from the title) */
 };
+
+/* The functions a player lays out (vp_controls.h), P1's then P2's. */
+#define FUNCTIONS 8
+extern const char *const FUNCTION_NAME[FUNCTIONS];    /* vp_input's: "p1_turn_left" ... */
+extern const char *const FUNCTION_LABEL[FUNCTIONS];   /* on the screen: "P1 TURN LEFT" ... */
 
 #define LIVES 5             /* per human, per game */
 
@@ -34,6 +40,11 @@ typedef struct Port {
 	int        tableFirst;        /* the title shows the table first */
 	vp_initials entry;            /* initials being entered ... */
 	int        entryPlayer;       /* ... by this human (0 or 1) */
+
+	vp_input  *input;             /* the controls (vp_game_input) */
+	int        ctlRow;            /* CONTROLS: the cursor's row (FUNCTIONS = EXIT) */
+	vp_capture capture;           /* ... and a function's controls being laid out */
+	char       ctlSaid[64];       /* what the page says under its rows */
 
 	vp3d_mesh *cycle;             /* data/lightcycle-low.obj */
 	vp_vec3    cycleMin;          /* its bounding box: stands it on the floor */
@@ -53,6 +64,9 @@ typedef struct Port {
 } Port;
 
 extern Port P;
+
+/* The attract demo is running: the title, or the CONTROLS page over it. */
+static inline int attractDemo(void) { return P.state == STATE_TITLE || P.state == STATE_CONTROLS; }
 
 /* render.c */
 void render_frame(vp_dvg *d);

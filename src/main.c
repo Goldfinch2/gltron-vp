@@ -11,6 +11,11 @@
  * game for 1 or 2 credits, their lamps blinking on the title screen when
  * there are enough. The exit button goes back to the VectorPie menu.
  *
+ * The players' controls are GLtron's own functions (vp_controls.h): out of the
+ * box the cabinet's (P1 LEFT turns P1 left ...), changed on the CONTROLS
+ * page, which TAB, or START 1 and START 2 together, opens from the title.
+ * They are kept in save/controls.ini.
+ *
  * A game (not in GLtron, which played rounds forever): each human has 5
  * lives and loses one in each round they crash in; a human out of lives sits
  * out; when all are out, GAME OVER. Scores are GLtron's (a point for every
@@ -70,7 +75,7 @@ void Audio_CrashPlayer(int player)
 		vol = CRASH_CPU_MAX * (1.0f - d / CRASH_RANGE);
 		if(vol < CRASH_CPU_MIN) vol = CRASH_CPU_MIN;
 	}
-	if(P.state == STATE_TITLE) vol *= 0.25f;
+	if(attractDemo()) vol *= 0.25f;
 	vp_sound_play(P.audio, P.sndCrash, vol, 1.0f, 0);
 }
 
@@ -233,12 +238,105 @@ static void entryDone(void)
 
 /* ---- the controls -------------------------------------------------------------------- */
 
+#define KEY_TAB        43           /* SDL scancodes */
+#define KEY_DELETE     76
+#define KEY_KP_PERIOD  99
+
+const char *const FUNCTION_NAME[FUNCTIONS] = {
+	"p1_turn_left", "p1_turn_right", "p1_boost", "p1_wall_buster",
+	"p2_turn_left", "p2_turn_right", "p2_boost", "p2_wall_buster",
+};
+const char *const FUNCTION_LABEL[FUNCTIONS] = {
+	"P1 TURN LEFT", "P1 TURN RIGHT", "P1 BOOST", "P1 WALL BUSTER",
+	"P2 TURN LEFT", "P2 TURN RIGHT", "P2 BOOST", "P2 WALL BUSTER",
+};
+/* Out of the box: the cabinet's. */
+static const char *const FUNCTION_STANDARD[FUNCTIONS] = {
+	"p1_left", "p1_right", "p1_button1", "p1_button2",
+	"p2_left", "p2_right", "p2_button1", "p2_button2",
+};
+
+static void defineControls(vp_input *in)
+{
+	int i;
+	for(i = 0; i < FUNCTIONS; i++)
+		vp_input_define(in, FUNCTION_NAME[i], FUNCTION_STANDARD[i]);
+	vp_input_reserve_key(in, KEY_TAB);      /* opens and closes the CONTROLS page */
+	vp_input_load(in, NULL);                /* the players' own, if they set any */
+}
+
+static void saveControls(vp_input *in)
+{
+	if(vp_input_save(in, NULL) != VP_OK)
+		fprintf(stderr, "gltron: controls not saved: %s\n", vp_last_error());
+}
+
+static void goControls(void)
+{
+	vp_sound_play(P.audio, P.sndMenu, 0.8f, 1.0f, 0);
+	memset(&P.capture, 0, sizeof P.capture);
+	P.ctlRow = 0;
+	P.ctlSaid[0] = 0;
+	setState(STATE_CONTROLS);
+}
+
+static void leaveControls(void)
+{
+	vp_sound_play(P.audio, P.sndMenu, 0.8f, 1.0f, 0);
+	P.state = STATE_TITLE;          /* the attract demo goes on */
+	P.stateTime = 0;
+}
+
+/* The CONTROLS page: Up/Down a row, START 1 / Enter lays out its function's
+ * controls (vp_capture), Left/Right none or standard, Delete standard; EXIT
+ * or TAB back to the title. */
+static void controlsPage(vp_input *in)
+{
+	const char *said;
+	int left, right;
+	if(P.capture.capturing) {
+		if(vp_capture_step(&P.capture, in) == VP_CAPTURE_CHANGED) {
+			saveControls(in);
+			vp_sound_play(P.audio, P.sndMenu, 0.8f, 1.0f, 0);
+		}
+	} else if(vp_input_key_pressed(in, KEY_TAB)) {
+		leaveControls();
+		return;
+	} else {
+		if(vp_input_menu_up(in) || vp_input_menu_down(in)) {
+			P.ctlRow = (P.ctlRow + (vp_input_menu_up(in) ? FUNCTIONS : 1)) % (FUNCTIONS + 1);
+			vp_capture_moved(&P.capture);
+			vp_sound_play(P.audio, P.sndCoin, 0.5f, 1.0f, 0);
+		}
+		left = vp_input_menu_left_pressed(in);
+		right = vp_input_menu_right_pressed(in);
+		vp_capture_filter(&P.capture, &left, &right);
+		if(P.ctlRow < FUNCTIONS) {
+			const char *name = FUNCTION_NAME[P.ctlRow];
+			if(vp_input_menu_confirm(in)) {
+				vp_capture_begin(&P.capture, in, name);
+			} else if(left || right) {
+				vp_capture_toggle(&P.capture, in, name);
+				saveControls(in);
+			} else if(vp_input_key_pressed(in, KEY_DELETE) || vp_input_key_pressed(in, KEY_KP_PERIOD)) {
+				vp_capture_standard(&P.capture, in, name);
+				saveControls(in);
+			}
+		} else if(vp_input_menu_confirm(in)) {
+			leaveControls();
+			return;
+		}
+	}
+	said = vp_capture_said(&P.capture);
+	snprintf(P.ctlSaid, sizeof P.ctlSaid, "%s", said ? said : "");
+}
+
 static void humanControls(vp_input *in)
 {
-	static const char *const turnLeft[2]  = { "p1_left", "p2_left" };
-	static const char *const turnRight[2] = { "p1_right", "p2_right" };
-	static const char *const boost[2]     = { "p1_button1", "p2_button1" };
-	static const char *const buster[2]    = { "p1_button2", "p2_button2" };
+	static const char *const turnLeft[2]  = { "p1_turn_left", "p2_turn_left" };
+	static const char *const turnRight[2] = { "p1_turn_right", "p2_turn_right" };
+	static const char *const boost[2]     = { "p1_boost", "p2_boost" };
+	static const char *const buster[2]    = { "p1_wall_buster", "p2_wall_buster" };
 	int i;
 
 	for(i = 0; i < P.humans; i++) {
@@ -325,8 +423,15 @@ static void update(vp_game *g, float dt)
 	else
 		vp_lamps_set(0);
 
-	/* START 1 / START 2 begin a game from the title, for 1 or 2 credits. */
+	/* START 1 / START 2 begin a game from the title, for 1 or 2 credits;
+	 * TAB, or both together, opens the CONTROLS page instead. */
 	if(P.state == STATE_TITLE) {
+		if(vp_input_key_pressed(in, KEY_TAB) ||
+		   (vp_input_held(in, "start1") && vp_input_held(in, "start2") &&
+		    (vp_input_pressed(in, "start1") || vp_input_pressed(in, "start2")))) {
+			goControls();
+			return;
+		}
 		if(vp_input_pressed(in, "start1") && vp_credits_take(&P.credits, 1)) { startGame(1); return; }
 		if(vp_input_pressed(in, "start2") && vp_credits_take(&P.credits, 2)) { startGame(2); return; }
 	}
@@ -374,6 +479,16 @@ static void update(vp_game *g, float dt)
 	case STATE_ENTRY:
 		if(vp_initials_update(&P.entry, in, dt))
 			entryDone();
+		break;
+
+	case STATE_CONTROLS:
+		/* the attract demo goes on behind the page */
+		if(game->pauseflag == PAUSE_GAME_FINISHED) {
+			newRound();
+			beginRound();
+		}
+		tick();
+		controlsPage(in);
 		break;
 	}
 }
@@ -433,6 +548,9 @@ static int init(vp_game *g)
 	vp3d_view_init(&P.view, 100.0f);
 	P.view.near_z = 0.5f;               /* GLtron's znear */
 	P.view.far_z = 4000.0f;
+
+	P.input = vp_game_input(g);
+	defineControls(P.input);
 
 	P.tableNew = -1;
 	goTitle(0);                         /* the attract demo */

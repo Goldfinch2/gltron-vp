@@ -28,6 +28,11 @@ cabinet's (advmame.rc).
 * **Button 1**: booster (while held, uses energy). **Button 2**: wall buster
   (pass through walls, uses energy). Energy refills over time.
 * **The exit button**: back to the VectorPie menu.
+* **CONTROLS**: on the title screen, TAB (or START 1 and START 2 together)
+  opens the controls page. Each player's TURN LEFT, TURN RIGHT, BOOST and
+  WALL BUSTER can be laid out on any key, button, hat or stick: START 1 on a
+  row, then the control (more on the same row add to it); START 2 sets none,
+  DEL the standard (the cabinet's controls). Kept in `save/controls.ini`.
 
 One player: the camera follows your cycle. Two players: one view of the whole
 arena. Before a game, the computer plays a demo.
