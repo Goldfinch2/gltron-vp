@@ -18,6 +18,7 @@
 #define ARENA       600.0f          /* levels/square.lua scale_factor */
 #define WALL_H      75.0f           /* square.lua: 0.125 x scale_factor */
 #define GRID_STEP   30.0f
+#define GRID_RANGE  210.0f          /* the chase view: the floor grid this far round the cycle */
 #define REC_HEIGHT  50.0f           /* video.h RECOGNIZER_HEIGHT */
 #define REC_SCALE   0.25f           /* recognizer.c rec_scale_factor */
 #define LEAN_DEG    25.0f           /* gamegraphics.c "neigung" */
@@ -103,8 +104,13 @@ void recognizer_position(vec2 *p, vec2 *v)
 
 /* ---- the camera ------------------------------------------------------------------------- */
 
+/* The chase view's cycle, for the floor grid's range (drawArena). */
+static int   s_chase;
+static float s_chaseX, s_chaseY;
+
 static void placeCamera(void)
 {
+	s_chase = 0;
 	vp3d_view *v = &P.view;
 	/* One human: GLtron's default follow camera ("Mike-cam"), alive or
 	 * still exploding (it stays on the crash, pulling back as the explosion
@@ -115,15 +121,26 @@ static void placeCamera(void)
 		float x, y, phi, chi = PI / 3, r = 18.0f + 1.5f * data->exp_radius;
 		unsigned int t = game2->time.current - data->turn_time;
 		getPositionFromData(&x, &y, data);
+		s_chase = 1;
+		s_chaseX = x;
+		s_chaseY = y;
 		phi = t < TURN_LENGTH
 			? getInterpolatedAngle(1 - (float)(TURN_LENGTH - t) / TURN_LENGTH,
 			                       getAngle(data->last_dir), getAngle(data->dir))
 			: getAngle(data->dir);
 		v->fov_deg = 100.0f;
-		/* depth cue: far lines down to 6 % */
-		v->fog_start = 40.0f;
-		v->fog_end = 500.0f;
-		v->fog_floor = 0.06f;
+		/* a draw distance: nothing past about seven grid lines ahead of the
+		 * cycle (depth 200 from this camera), lines crossing it cut there:
+		 * a farther view, full-width sweeps piled under the horizon, made
+		 * some deflection boards pull the picture in */
+		v->far_z = 200.0f;
+		v->far_cut = 1;
+		/* ... reached in a fade: full brightness up to depth 130, then down
+		 * to nothing at the draw distance, so what comes into view fades in
+		 * rather than popping up */
+		v->fog_start = 130.0f;
+		v->fog_end = 200.0f;
+		v->fog_floor = 0.0f;
 		vp3d_look_at(v, W(x + r * cosf(phi) * sinf(chi), y + r * sinf(phi) * sinf(chi), r * cosf(chi)),
 		             W(x, y, 0), vp_v3(0, 1, 0));
 		return;
@@ -131,16 +148,15 @@ static void placeCamera(void)
 	/* Two humans, the attract demo, or a crashed player: the whole arena,
 	 * from above one side (circling slowly in the demo). */
 	v->fov_deg = 70.0f;
-	v->fog_floor = 0.06f;               /* near side of the arena full, far side 6 % */
+	v->far_z = 4000.0f;                 /* the whole arena */
+	v->far_cut = 0;
+	v->fog_start = v->fog_end = 0.0f;   /* no fog: a fogged line is drawn in up to 12
+	                                     * steps of brightness, a color change each */
 	if(attractDemo()) {
-		v->fog_start = 450.0f;          /* the camera is about 775 from the center */
-		v->fog_end = 1000.0f;
 		float a = P.recAlpha * 0.15f;
 		vp3d_look_at(v, W(ARENA / 2 + 650 * sinf(a), ARENA / 2 - 650 * cosf(a), 420),
 		             W(ARENA / 2, ARENA / 2, 0), vp_v3(0, 1, 0));
 	} else {
-		v->fog_start = 580.0f;          /* the near wall, then the far wall about 1000 */
-		v->fog_end = 950.0f;
 		vp3d_look_at(v, W(ARENA / 2, -260, 520), W(ARENA / 2, ARENA * 0.55f, 0), vp_v3(0, 1, 0));
 	}
 }
@@ -152,12 +168,34 @@ static void drawWallArt(vp_dvg *d);
 static void drawArena(vp_dvg *d)
 {
 	int i;
-	/* the floor: a grid of lines (GLtron's was a texture) */
+	/* the floor: a grid of lines (GLtron's was a texture). Drawn back and
+	 * forth (each line starts where the last one ended), one direction then
+	 * the other, so the beam does not jump back across the screen, dark,
+	 * before each line. In the chase view only the grid within GRID_RANGE
+	 * of the cycle: seen low from behind, the far cross lines are full-width
+	 * sweeps piled under the horizon (some deflection boards pull the
+	 * picture in once more than about seven of them are in view). */
 	vp_color(d, 0, 0, 255);
-	for(i = 0; i <= (int)(ARENA / GRID_STEP); i++) {
-		float c = i * GRID_STEP;
-		vp3d_scene_line(P.scene, W(c, 0, 0), W(c, ARENA, 0));
-		vp3d_scene_line(P.scene, W(0, c, 0), W(ARENA, c, 0));
+	{
+		float x0 = 0, x1 = ARENA, y0 = 0, y1 = ARENA;
+		if(s_chase) {
+			x0 = fmaxf(0, s_chaseX - GRID_RANGE); x1 = fminf(ARENA, s_chaseX + GRID_RANGE);
+			y0 = fmaxf(0, s_chaseY - GRID_RANGE); y1 = fminf(ARENA, s_chaseY + GRID_RANGE);
+		}
+		const int n = (int)(ARENA / GRID_STEP);
+		int k = 0;
+		for(i = 0; i <= n; i++) {
+			float c = i * GRID_STEP;
+			if(c < x0 || c > x1) continue;
+			if(k++ & 1) vp3d_scene_line(P.scene, W(c, y1, 0), W(c, y0, 0));
+			else        vp3d_scene_line(P.scene, W(c, y0, 0), W(c, y1, 0));
+		}
+		for(i = n; i >= 0; i--) {
+			float c = i * GRID_STEP;
+			if(c < y0 || c > y1) continue;
+			if(k++ & 1) vp3d_scene_line(P.scene, W(x1, c, 0), W(x0, c, 0));
+			else        vp3d_scene_line(P.scene, W(x0, c, 0), W(x1, c, 0));
+		}
 	}
 	/* the arena walls: solid, outlined */
 	vp_color(d, 120, 0, 200);
